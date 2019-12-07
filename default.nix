@@ -22,4 +22,5 @@ let
 in {
   day1 = mkDayDrv ./day1 "day1.cr";
   day2 = mkDayDrv ./day2 "day2.cr";
+  day3 = mkDayDrv ./day3 "day3.cr";
 }
