@@ -15,54 +15,21 @@ class Wire
   @current_x = 0
   @current_y = 0
 
+  OFFSETS_BY_DIRECTIONS = {
+    'U' => { 0,  1},
+    'D' => { 0, -1},
+    'R' => { 1,  0},
+    'L' => {-1,  0},
+  }
+
   def do_instruction(instr)
-    direction_chr, value = instr[0], instr[1..].to_i
-    case direction_chr
-    when 'U'
-      advance_to(@current_x, @current_y + value)
-    when 'D'
-      advance_to(@current_x, @current_y - value)
-    when 'R'
-      advance_to(@current_x + value, @current_y)
-    when 'L'
-      advance_to(@current_x - value, @current_y)
+    direction_chr, move_count = instr[0], instr[1..].to_i
+
+    offset_x, offset_y = OFFSETS_BY_DIRECTIONS[direction_chr]
+    move_count.times do
+      @current_x, @current_y = @current_x + offset_x, @current_y + offset_y
+      occupied_cells << {@current_x, @current_y}
     end
-  end
-
-  # TODO: This should probably be in the stdlib!
-  private struct EmptyIterator(T)
-    include Iterator(T)
-
-    def next
-      stop
-    end
-  end
-
-  private def iterator_for_advance(base, target) : Iterator(Int32)
-    if base < target
-      base.upto(target)
-    elsif base > target
-      base.downto(target)
-    else
-      return EmptyIterator(Int32).new
-    end
-  end
-
-  def advance_to(target_x, target_y)
-    base_x, base_y = @current_x, @current_y
-
-    iterator_x = iterator_for_advance(base_x, target_x)
-    iterator_y = iterator_for_advance(base_y, target_y)
-
-    iterator_x.each do |x|
-      occupied_cells << {x, @current_y}
-    end
-
-    iterator_y.each do |y|
-      occupied_cells << {@current_x, y}
-    end
-
-    @current_x, @current_y = target_x, target_y
   end
 
   def distance_to_cell(x, y)
@@ -163,6 +130,11 @@ puts "----- Part 2"
 def part2_do_the_thing(wire1, wire2)
   common_cells = wire1.occupied_cells & wire2.occupied_cells
   common_cells.delete({0, 0}) # pos {0, 0} does not count
+
+  if common_cells.size == 0
+    puts "!!! No common cells between these wires"
+    return nil
+  end
 
   common_cells.map do |cell_pos|
     wire1.distance_to_cell(*cell_pos) + wire2.distance_to_cell(*cell_pos)
