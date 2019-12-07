@@ -55,9 +55,6 @@ class Computer
   def exec_next_instruction
     return false unless @running
 
-    if @ip > @memory.size
-    end
-
     case opcode = guard @memory[@ip]
     when 1
       from_addr1 = guard @memory[@ip + 1]
@@ -138,6 +135,10 @@ puts
 
 puts "---- Test unknown opcode"
 part1_run_program "1,1,1,0,42,99", debug: true
+puts
+
+puts "---- Test without end"
+part1_run_program "1,0,0,0"
 puts
 
 puts "---- Part1"
