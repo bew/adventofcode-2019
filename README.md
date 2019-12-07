@@ -1,6 +1,8 @@
 # Advent of Code 2019
 
-This is my attempt at the 2019 edition of [AdventOfCode](https://adventofcode.com/2019), using the [Crystal](https://crystal-lang.org) programming language.
+_First time doing this event! I'm excited!_
+
+This repository is my attempt at the 2019 edition of [AdventOfCode](https://adventofcode.com/2019), using the [Crystal](https://crystal-lang.org) programming language.
 
 This project is also my first time using the [Nix](https://nixos.org/nix/) package manager :tada:.
 
