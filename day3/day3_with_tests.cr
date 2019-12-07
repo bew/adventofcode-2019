@@ -1,3 +1,7 @@
+# Wire, part1 & part2 are copied from ./day3.cr
+# I can't require that file since it would run the top-level code, and I want to
+# be able to run that file on its own...
+
 INPUT = {{ read_file "#{__DIR__}/input" }}
 
 class Wire
@@ -69,12 +73,69 @@ def part2(wire1, wire2)
   end.min
 end
 
-input_lines = INPUT.lines
-wire1 = Wire.from_instructions input_lines[0]
-wire2 = Wire.from_instructions input_lines[1]
+# -------------------------------------
 
-result = part1(wire1, wire2)
+def wires_from_input(input)
+  input_lines = input.lines
+  wire1 = Wire.from_instructions(input_lines[0])
+  wire2 = Wire.from_instructions(input_lines[1])
+  {wire1, wire2}
+end
+
+def assert_result(value, *, expected)
+  if value == expected
+    puts "OK! Distance #{value} is right for this input"
+  else
+    puts "!!! Got distance #{value} but expected #{expected}"
+  end
+end
+
+tests = {
+  {
+    input: %(
+      R8,U5,L5,D3
+      U7,R6,D4,L4
+    ).strip,
+    part1: 6,
+    part2: 30,
+  },
+  {
+    input: %(
+      R75,D30,R83,U83,L12,D49,R71,U7,L72
+      U62,R66,U55,R34,D71,R55,D58,R83
+    ).strip,
+    part1: 159,
+    part2: 610,
+  },
+  {
+    input: %(
+      R98,U47,R26,D63,R33,U87,L62,D20,R33,U53,R51
+      U98,R91,D20,R16,D67,R40,U7,R15,U6,R7
+    ).strip,
+    part1: 135,
+    part2: 410,
+  },
+}
+
+# -------------------------------------
+
+puts "----- Part 1"
+
+tests.each do |test|
+  result = part1(*wires_from_input(test[:input]))
+  assert_result result, expected: test[:part1]
+end
+
+result = part1(*wires_from_input(INPUT))
 puts "Part1 result: #{result}" # Should be 386
 
-result = part2(wire1, wire2)
+puts
+puts "----- Part 2"
+
+tests.each do |test|
+  result = part2(*wires_from_input(test[:input]))
+  assert_result result, expected: test[:part2]
+end
+
+result = part2(*wires_from_input(INPUT))
 puts "Part2 result: #{result}" # Should be 6484

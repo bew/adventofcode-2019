@@ -2,7 +2,7 @@ with import <nixpkgs> {};
 
 let
   mkDayDrv = src: main_src: stdenv.mkDerivation {
-    name = "adventofcode-2019--${baseNameOf src}";
+    name = "adventofcode-2019--${baseNameOf src}-${baseNameOf main_src}";
 
     buildInputs = [
       crystal
@@ -23,4 +23,5 @@ in {
   day1 = mkDayDrv ./day1 "day1.cr";
   day2 = mkDayDrv ./day2 "day2.cr";
   day3 = mkDayDrv ./day3 "day3.cr";
+  day3_with_tests = mkDayDrv ./day3 "day3_with_tests.cr";
 }
