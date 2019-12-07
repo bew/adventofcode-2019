@@ -1,30 +1,5 @@
 INPUT = {{ read_file "#{__DIR__}/input" }}
 
-# debug helper
-
-module G
-  class_property? debug = false
-end
-
-def __debug(*args)
-  return unless G.debug?
-  args.each do |arg|
-    print "DEBUG: "
-    puts arg
-  end
-  puts if args.size == 0
-end
-macro __debug!(*args)
-  {% for arg in args %}
-    if G.debug?
-      print "DEBUG: "
-      p!({{ arg }})
-    end
-  {% end %}
-end
-
-# puzzle!
-
 class Wire
   def self.from_instructions(instructions_str)
     instructions = instructions_str.split(',').map!(&.strip)
@@ -44,16 +19,12 @@ class Wire
     direction_chr, value = instr[0], instr[1..].to_i
     case direction_chr
     when 'U'
-      __debug "UP    | Y + #{value}"
       advance_to(@current_x, @current_y + value)
     when 'D'
-      __debug "DOWN  | Y - #{value}"
       advance_to(@current_x, @current_y - value)
     when 'R'
-      __debug "RIGHT | X + #{value}"
       advance_to(@current_x + value, @current_y)
     when 'L'
-      __debug "LEFT  | X - #{value}"
       advance_to(@current_x - value, @current_y)
     end
   end
@@ -63,19 +34,13 @@ class Wire
     # save the real target coords
     real_target_x, real_target_y = target_x, target_y
 
-    __debug "X: #{base_x} -> #{target_x}" if base_x != target_x
-    __debug "Y: #{base_y} -> #{target_y}" if base_y != target_y
-
-    # keep base < target because it is required by crystal's ranges
+    # keep base < target because it is required for crystal's ranges
     if target_x < base_x
       base_x, target_x = target_x, base_x
     end
     if target_y < base_y
       base_y, target_y = target_y, base_y
     end
-
-    __debug "after flip X: #{base_x} -> #{target_x}" if base_x != target_x
-    __debug "after flip Y: #{base_y} -> #{target_y}" if base_y != target_y
 
     (base_x..target_x).each do |x|
       occupied_cells << {x, @current_y}
@@ -86,42 +51,31 @@ class Wire
     end
 
     @current_x, @current_y = real_target_x, real_target_y
-    __debug "New end pos: #{ {@current_x, @current_y} }"
   end
 end
 
-def dist_to_closer_intersection(wire1, wire2)
-  __debug! wire1.occupied_cells, wire2.occupied_cells
-
+def dist_to_closest_intersection(wire1, wire2)
   common_cells = wire1.occupied_cells & wire2.occupied_cells
   common_cells.delete({0, 0}) # pos {0, 0} does not count
-  sorted_common_cells = common_cells.to_a.sort_by! { |(x, y)| x.abs + y.abs }
-  __debug "sorted_common_cells: #{sorted_common_cells}"
+  distances_to_common_cells = common_cells.map { |(x, y)| x.abs + y.abs }
 
-  unless sorted_common_cells.size >= 1
+  unless distances_to_common_cells.size >= 1
     puts "ERROR: No intersection found between the wires"
     return 0
   end
 
-  pos = sorted_common_cells.first
-  pos[0].abs + pos[1].abs
+  distances_to_common_cells.sort.first
 end
 
 # -------------------------------------
 
-def part1_test_instructions(input, assert_result = nil, debug = false)
+def part1_test_instructions(input, assert_result = nil)
   input_lines = input.strip.lines
-
-  if debug
-    dbg = G.debug?
-    G.debug = true
-    puts
-  end
 
   wire1 = Wire.from_instructions input_lines[0]
   wire2 = Wire.from_instructions input_lines[1]
 
-  result = dist_to_closer_intersection(wire1, wire2)
+  result = dist_to_closest_intersection(wire1, wire2)
 
   if assert_result
     if result == assert_result
@@ -131,8 +85,6 @@ def part1_test_instructions(input, assert_result = nil, debug = false)
     end
   end
   result
-ensure
-  G.debug = dbg unless dbg.nil?
 end
 
 test_input1 = %(
@@ -150,13 +102,13 @@ test_input3 = %(
   U98,R91,D20,R16,D67,R40,U7,R15,U6,R7
 ) # distance 135
 
-part1_test_instructions(test_input1, assert_result: 6, debug: true)
+part1_test_instructions(test_input1, assert_result: 6)
 
 part1_test_instructions(test_input2, assert_result: 159)
 part1_test_instructions(test_input3, assert_result: 135)
 
 result = part1_test_instructions(INPUT)
-puts "Part1 result: #{result}"
+puts "Part1 result: #{result}" # Should be 386
 puts
 
 # -------------------------------------
