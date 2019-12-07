@@ -107,6 +107,8 @@ class Computer
   end
 end
 
+# ----------------------------
+
 def part1_run_program(program, restore = false, debug = false)
   puts "Program: #{program}" if debug
   computer = Computer.from_program program
@@ -122,7 +124,7 @@ def part1_run_program(program, restore = false, debug = false)
     puts "!!! Program failed with error: #{computer.error}"
   end
   puts "Memory dump: #{computer.memory}" if debug
-  puts "Result: #{computer.result}"
+  computer.result
 end
 
 puts "---- Given test program"
@@ -142,4 +144,46 @@ part1_run_program "1,0,0,0"
 puts
 
 puts "---- Part1"
-part1_run_program INPUT, restore: true, debug: false
+result = part1_run_program INPUT, restore: true, debug: false
+# Result should be 2782414
+puts "Part1 result: #{result}"
+
+puts
+puts "=" * 42
+puts
+
+# ----------------------------
+
+def part2_try_noun_verb(program, noun, verb)
+  computer = Computer.from_program program
+  # computer.debug = true
+  computer.memory[1] = noun
+  computer.memory[2] = verb
+
+  unless computer.run
+    puts "!! Pair #{ {noun, verb} } failed with error: #{computer.error}"
+  end
+
+  computer.result
+end
+
+def part2
+  target_output = 19690720
+  noun = verb = 0
+
+  (0..99).each do |noun_test|
+    (0..99).each do |verb_test|
+      result = part2_try_noun_verb(INPUT, noun_test, verb_test)
+      if result == target_output
+        noun = noun_test
+        verb = verb_test
+      end
+    end
+  end
+
+
+  puts "Part2 result is: #{100 * noun + verb} (#{ {noun: noun, verb: verb} })"
+  # Result should be 9820
+end
+
+part2
