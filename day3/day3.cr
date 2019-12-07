@@ -29,28 +29,40 @@ class Wire
     end
   end
 
+  # TODO: This should probably be in the stdlib!
+  private struct EmptyIterator(T)
+    include Iterator(T)
+
+    def next
+      stop
+    end
+  end
+
+  private def iterator_for_advance(base, target) : Iterator(Int32)
+    if base < target
+      base.upto(target)
+    elsif base > target
+      base.downto(target)
+    else
+      return EmptyIterator(Int32).new
+    end
+  end
+
   def advance_to(target_x, target_y)
     base_x, base_y = @current_x, @current_y
-    # save the real target coords
-    real_target_x, real_target_y = target_x, target_y
 
-    # keep base < target because it is required for crystal's ranges
-    if target_x < base_x
-      base_x, target_x = target_x, base_x
-    end
-    if target_y < base_y
-      base_y, target_y = target_y, base_y
-    end
+    iterator_x = iterator_for_advance(base_x, target_x)
+    iterator_y = iterator_for_advance(base_y, target_y)
 
-    (base_x..target_x).each do |x|
+    iterator_x.each do |x|
       occupied_cells << {x, @current_y}
     end
 
-    (base_y..target_y).each do |y|
+    iterator_y.each do |y|
       occupied_cells << {@current_x, y}
     end
 
-    @current_x, @current_y = real_target_x, real_target_y
+    @current_x, @current_y = target_x, target_y
   end
 
   def distance_to_cell(x, y)
@@ -58,7 +70,9 @@ class Wire
     # order of insertion. And since a Set does not duplicate values, the first
     # time we find a given position we can be sure it is the first time the wire
     # enters this cell.
-    pos_idx = occupied_cells.to_a.index({x, y}).not_nil!
+    cells = occupied_cells.to_a
+    cells.delete({0, 0}) # pos {0, 0} does not count in the calculation
+    pos_idx = cells.index({x, y}).not_nil!
     pos_idx + 1
   end
 end
@@ -112,6 +126,7 @@ tests = {
 }
 
 # -------------------------------------
+# Part 1-2 logic
 
 puts "----- Part 1"
 
@@ -140,28 +155,29 @@ end
 
 result = part1(INPUT)
 puts "Part1 result: #{result}" # Should be 386
-puts
 
 # -------------------------------------
+puts
 puts "----- Part 2"
 
-def do_something(wire1, wire2)
+def part2_do_the_thing(wire1, wire2)
   common_cells = wire1.occupied_cells & wire2.occupied_cells
   common_cells.delete({0, 0}) # pos {0, 0} does not count
 
-  # distances_to_common_cells = common_cells.map { |(x, y)| x.abs + y.abs }
-
-  p! common_cells
-  cell = common_cells.first
-
-  p! wire1.occupied_cells
-  p! wire1.distance_to_cell(*cell)
+  common_cells.map do |cell_pos|
+    wire1.distance_to_cell(*cell_pos) + wire2.distance_to_cell(*cell_pos)
+  end.min
 end
 
 def part2(input, assert_result = nil)
   parse_then_do_then_check(input, assert_result) do |wire1, wire2|
-    do_something(wire1, wire2)
+    part2_do_the_thing(wire1, wire2)
   end
 end
 
-part2(tests[0][:input], assert_result: tests[0][:part2])
+tests.each do |test|
+  part2(test[:input], assert_result: test[:part2])
+end
+
+result = part2(INPUT)
+puts "Part2 result: #{result}" # Should be 6484
