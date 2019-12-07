@@ -1,4 +1,4 @@
-INPUT = {{ read_file "./input" }}
+INPUT = {{ read_file "#{__DIR__}/input" }}
 
 def mass_to_fuel(mass)
   mass // 3 - 2
