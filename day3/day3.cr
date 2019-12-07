@@ -52,30 +52,26 @@ class Wire
 
     @current_x, @current_y = real_target_x, real_target_y
   end
-end
 
-def dist_to_closest_intersection(wire1, wire2)
-  common_cells = wire1.occupied_cells & wire2.occupied_cells
-  common_cells.delete({0, 0}) # pos {0, 0} does not count
-  distances_to_common_cells = common_cells.map { |(x, y)| x.abs + y.abs }
-
-  unless distances_to_common_cells.size >= 1
-    puts "ERROR: No intersection found between the wires"
-    return 0
+  def distance_to_cell(x, y)
+    # Here we use a property of Crystal's Set, where the values are stored in
+    # order of insertion. And since a Set does not duplicate values, the first
+    # time we find a given position we can be sure it is the first time the wire
+    # enters this cell.
+    pos_idx = occupied_cells.to_a.index({x, y}).not_nil!
+    pos_idx + 1
   end
-
-  distances_to_common_cells.sort.first
 end
 
 # -------------------------------------
 
-def part1_test_instructions(input, assert_result = nil)
-  input_lines = input.strip.lines
+def parse_then_do_then_check(input, assert_result = nil)
+  input_lines = input.lines
 
   wire1 = Wire.from_instructions input_lines[0]
   wire2 = Wire.from_instructions input_lines[1]
 
-  result = dist_to_closest_intersection(wire1, wire2)
+  result = yield wire1, wire2
 
   if assert_result
     if result == assert_result
@@ -84,33 +80,88 @@ def part1_test_instructions(input, assert_result = nil)
       puts "!!! Got distance #{result} but expected #{assert_result}"
     end
   end
+
   result
 end
 
-test_input1 = %(
-  R8,U5,L5,D3
-  U7,R6,D4,L4
-) # distance 6
+tests = {
+  {
+    input: %(
+      R8,U5,L5,D3
+      U7,R6,D4,L4
+    ).strip,
+    part1: 6,
+    part2: 30,
+  },
+  {
+    input: %(
+      R75,D30,R83,U83,L12,D49,R71,U7,L72
+      U62,R66,U55,R34,D71,R55,D58,R83
+    ).strip,
+    part1: 159,
+    part2: 610,
+  },
+  {
+    input: %(
+      R98,U47,R26,D63,R33,U87,L62,D20,R33,U53,R51
+      U98,R91,D20,R16,D67,R40,U7,R15,U6,R7
+    ).strip,
+    part1: 135,
+    part2: 410,
+  },
+}
 
-test_input2 = %(
-  R75,D30,R83,U83,L12,D49,R71,U7,L72
-  U62,R66,U55,R34,D71,R55,D58,R83
-) # distance 159
+# -------------------------------------
 
-test_input3 = %(
-  R98,U47,R26,D63,R33,U87,L62,D20,R33,U53,R51
-  U98,R91,D20,R16,D67,R40,U7,R15,U6,R7
-) # distance 135
+puts "----- Part 1"
 
-part1_test_instructions(test_input1, assert_result: 6)
+def dist_to_closest_intersection(wire1, wire2)
+  common_cells = wire1.occupied_cells & wire2.occupied_cells
+  common_cells.delete({0, 0}) # pos {0, 0} does not count
+  distances_to_common_cells = common_cells.map { |(x, y)| x.abs + y.abs }
 
-part1_test_instructions(test_input2, assert_result: 159)
-part1_test_instructions(test_input3, assert_result: 135)
+  unless distances_to_common_cells.size >= 1
+    puts "ERROR: No intersection found between the wires"
+    return nil
+  end
 
-result = part1_test_instructions(INPUT)
+  distances_to_common_cells.sort.first
+end
+
+def part1(input, assert_result = nil)
+  parse_then_do_then_check(input, assert_result) do |wire1, wire2|
+    dist_to_closest_intersection(wire1, wire2)
+  end
+end
+
+tests.each do |test|
+  part1(test[:input], assert_result: test[:part1])
+end
+
+result = part1(INPUT)
 puts "Part1 result: #{result}" # Should be 386
 puts
 
 # -------------------------------------
+puts "----- Part 2"
 
+def do_something(wire1, wire2)
+  common_cells = wire1.occupied_cells & wire2.occupied_cells
+  common_cells.delete({0, 0}) # pos {0, 0} does not count
 
+  # distances_to_common_cells = common_cells.map { |(x, y)| x.abs + y.abs }
+
+  p! common_cells
+  cell = common_cells.first
+
+  p! wire1.occupied_cells
+  p! wire1.distance_to_cell(*cell)
+end
+
+def part2(input, assert_result = nil)
+  parse_then_do_then_check(input, assert_result) do |wire1, wire2|
+    do_something(wire1, wire2)
+  end
+end
+
+part2(tests[0][:input], assert_result: tests[0][:part2])
