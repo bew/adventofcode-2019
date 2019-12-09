@@ -15,3 +15,7 @@ Then the built puzzles are symlinked by `nix-build` in the current directory.
 ### Run using crystal directly
 
 Each day puzzle can be run using: `crystal run ./day2/day2.cr`
+
+---
+
+test from sg vm
