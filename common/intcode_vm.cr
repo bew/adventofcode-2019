@@ -112,11 +112,11 @@ class IntCodeVM
   end
 
   struct Instruction
-    alias Proc = (Memory, Int32, OpcodeField) -> (Error | Int32)
+    alias ProcT = (OpcodeFlags) -> (Error | Int32)
 
     getter opcode : Int32
     getter name : String
-    @handler : Proc
+    @handler : ProcT
 
     def initialize(@opcode, @name, @handler)
     end
@@ -133,84 +133,60 @@ class IntCodeVM
     @instructions = gather_instructions
   end
 
-  private macro __fetch_args(opcode_field_var, *arg_mode_specs)
-    {% arg_count = arg_mode_specs.size %}
+  private def __fetch_arg(idx, opcode_flags, param_name)
+    __debug "Arg index #{idx}"
 
-    __debug
-    __debug "--- fetching args...."
+    mode = opcode_flags.mode_for_arg(idx)
+    __debug "  mode: #{mode}"
 
-    {% for idx in 0...arg_count %}
-      __debug "Arg index {{idx}}"
-
-      %arg_mode_spec{idx} = ArgModeSpec.new({{ arg_mode_specs[idx] }})
-
-      __debug "  arg_mode_specs: #{%arg_mode_spec{idx}}"
-
-      # case %arg_mode_spec{idx}
-      # when .opcode_mode?
-        %mode{idx} = {{ opcode_field_var }}.mode_for_arg({{ idx }})
-      # when .raw_addr?
-      #   %mode{idx} = ArgMode::Addr
-      # else
-      #   raise "BUG: Unknown ArgModeSpec: #{ %arg_mode_spec{idx} }"
-      # end
-
-      __debug "  mode: #{%mode{idx}}"
-
-      case %mode{idx}
-      when .address?
-        if %arg_mode_spec{idx}.opcode_mode?
-          %arg_addr{idx} = err_guard @memory[@ip + {{ idx }}]
-          %arg{idx} = err_guard @memory[%arg_addr{idx}]
-          __debug "  addr: #{%arg_addr{idx}} | resolved_addr: #{%arg{idx}}"
-        else
-          %arg{idx} = err_guard @memory[@ip + {{ idx }}]
-          __debug "  raw_addr: #{%arg{idx}}"
-        end
-
-        # %arg_addr{idx} = err_guard @memory[@ip + {{ idx }}]
-        # %arg{idx} = err_guard @memory[%arg_addr{idx}]
-      when .immediate?
-        %arg{idx} = err_guard @memory[@ip + {{ idx }}]
-        __debug "  immediate: #{%arg{idx}}"
-
-      else raise "BUG: Unknown ArgMode: #{%mode{idx}}"
+    case mode
+    when .address?
+      if /addr/.match(param_name)
+        value = err_guard @memory[@ip + idx]
+        __debug "  raw_addr: #{value}"
+      else
+        arg_addr = err_guard @memory[@ip + idx]
+        value = err_guard @memory[arg_addr]
+        __debug "  addr: #{arg_addr} | resolved_addr: #{value}"
       end
+    when .immediate?
+      value = err_guard @memory[@ip + idx]
+      __debug "  immediate: #{value}"
 
-    {% end %}
+    else raise "BUG: Unknown ArgMode: #{mode}"
+    end
 
-    Tuple.new(
-      {% for idx in 0...arg_count %}
-        %arg{idx},
-      {% end %}
-    )
+    value
   end
 
   private def gather_instructions
     all_instr = {} of Int32 => Instruction
-    {% for op_def in @type.methods.select { |m| !!m.annotation(Opcode) } %}
-      {% ann = op_def.annotation(Opcode) %}
+    {% for def_node in @type.methods.select { |m| !!m.annotation(Opcode) } %}
+      {% ann = def_node.annotation(Opcode) %}
       {% opcode = ann.args.first %}
-      {% arg_mode_specs = ann[:arg_modes] || ([] of Nil) %}
-      {% arg_count = arg_mode_specs.size %}
+      {% arg_count = def_node.args.size %}
+      {% instr_name = ann.args[1].id.stringify %}
 
-      {% if arg_count != op_def.args.size %}
-        {% ann.raise "Number of arguments mismatch between annotation and def (#{arg_count} != #{op_def.args.size})" %}
-      {% end %}
+      # ---- BEGIN opcode {{ opcode }} ({{ instr_name }})
+      handler_proc = Instruction::ProcT.new do |opcode_flags|
 
-      # ---- For opcode {{ opcode }}
+        __debug "--- fetching args for opcode {{ instr_name.id }}"
 
-      handler_proc = Instruction::Proc.new do |mem, ip, opcode_field|
-        args_or_err = __fetch_args(opcode_field, {{ arg_mode_specs.splat }})
-        decoded_args = err_guard args_or_err
+        decoded_args = Tuple.new(
+          {% for idx in 0...arg_count %}
+            err_guard(__fetch_arg({{ idx }}, opcode_flags, param_name: ({{ def_node.args[idx].name.stringify }}))),
+          {% end %}
+        )
+
         __debug! decoded_args
-        err_guard({{ op_def.name }}(*decoded_args))
+        err_guard({{ def_node.name }}(*decoded_args))
 
-        ip + {{ arg_count }}
+        @ip + {{ arg_count }}
       end
 
-      instr = Instruction.new({{ opcode }}, {{ op_def.name.stringify }}, handler_proc)
+      instr = Instruction.new({{ opcode }}, {{ instr_name }}, handler_proc)
       all_instr[{{ opcode }}] = instr
+      # ---- END opcode {{ opcode }} ({{ instr_name }})
     {% end %}
 
     all_instr
@@ -218,7 +194,6 @@ class IntCodeVM
 
   def run
     @running = true
-    __debug "INIT partial mem: #{@memory[..15]}"
     while @running
       err = exec_next_instruction
       if err.is_a? Error
@@ -240,36 +215,23 @@ class IntCodeVM
   def exec_next_instruction
     return false unless @running
 
-    opcode_field = OpcodeField.new err_guard @memory[@ip]
-    opcode = opcode_field.opcode
+    __debug
+    __debug "/=> partial mem (from IP:#{@ip}): #{@memory[@ip..@ip + 10]}"
+
+    opcode, flags = OpcodeFlags.from_opcode_field(err_guard @memory[@ip])
     @ip += 1
 
     if instr = @instructions[opcode]?
-      @ip = err_guard instr.call(@memory, @ip, opcode_field)
-      __debug " \\=> partial mem: #{@memory[..15]}"
+      @ip = err_guard instr.call(flags)
     else
       puts "/!\\ WARNING: Unknown opcode #{opcode} at IP:#{@ip}, skipping"
       @ip += 1
     end
   end
 
-  enum ArgModeSpec # FIXME: rename? move?
-    OpcodeMode
-
-    RawAddr
-
-    OutAddr = RawAddr
-
-    def self.new(mode : self)
-      mode
-    end
-  end
-
   enum ArgMode # FIXME: rename? move? ArgKind ?
     Address # `Position` in the challenge's statement
     Immediate
-
-    Addr = Address
 
     def self.new(mode : self)
       mode
@@ -284,36 +246,45 @@ class IntCodeVM
   #  B - mode of 2nd parameter,  1 == immediate mode
   #  A - mode of 3rd parameter,  0 == position mode,
   #                                   omitted due to being a leading zero
-  struct OpcodeField # FIXME: rename?
-    getter opcode : Int32
-    @arg_mode_flags : Int32
+  struct OpcodeFlags # FIXME: rename?
+    def self.from_opcode_field(opcode_field)
+      opcode = opcode_field % 100 # extract first 2 digit
+      flags = opcode_field // 100
 
-    def initialize(raw_opcode : Int32)
-      @opcode = raw_opcode % 100 # extract first 2 digit
-      @arg_mode_flags = raw_opcode // 100
+      {opcode, new(flags)}
+    end
+
+    private def initialize(@arg_flags : Int32)
     end
 
     def mode_for_arg(arg_idx)
-      mode = (@arg_mode_flags // (10 ** arg_idx) % 10)
-      mode == 1 ? ArgMode::Immediate : ArgMode::Address
+      mode = (@arg_flags // (10 ** arg_idx) % 10)
+      case mode
+      when 0
+        ArgMode::Address
+      when 1
+        ArgMode::Immediate
+      else
+        raise "BUG: Unknown arg flag #{mode}"
+      end
     end
   end
 
-  @[Opcode(1, arg_modes: [:opcode_mode, :opcode_mode, :out_addr])]
+  @[Opcode(1, :add)]
   def op_add(val1, val2, to_addr)
     __debug "[IP:#{@ip}] mem[#{to_addr}] = #{val1} + #{val2}"
 
     err_guard @memory[to_addr] = val1 + val2
   end
 
-  @[Opcode(2, arg_modes: [:opcode_mode, :opcode_mode, :out_addr])]
+  @[Opcode(2, :mul)]
   def op_mul(val1, val2, to_addr)
     __debug "[IP:#{@ip}] Opcode mul : mem[#{to_addr}] = #{val1} * #{val2}"
 
     err_guard @memory[to_addr] = val1 * val2
   end
 
-  @[Opcode(3, arg_modes: [:out_addr])]
+  @[Opcode(3, :input)]
   def op_input(to_addr)
     value = inputs_channel.receive
 
@@ -322,16 +293,14 @@ class IntCodeVM
     err_guard @memory[to_addr] = value
   end
 
-  @[Opcode(4, arg_modes: [:out_addr])]
-  def op_output(from_addr)
-    value = err_guard @memory[from_addr]
-
-    __debug "[IP:#{@ip}] Opcode output : output << mem[#{from_addr}] (got #{value})"
+  @[Opcode(4, :output)]
+  def op_output(value)
+    __debug "[IP:#{@ip}] Opcode output : output << #{value}"
     outputs_channel.send value
     Fiber.yield # give a chance to the other end of the output channel to do something
   end
 
-  @[Opcode(99)]
+  @[Opcode(99, :quit)]
   def op_quit
     __debug "[IP:#{@ip}] Opcode quit!"
     @running = false

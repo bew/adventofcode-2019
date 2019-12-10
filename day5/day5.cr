@@ -20,7 +20,9 @@ def test_program(input)
   end
 
   puts "--- Running VM"
-  vm.run
+  unless vm.run
+    puts "!!! Program failed with error: #{vm.error}"
+  end
 
   puts
   puts "--- Gathered output:"
