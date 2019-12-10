@@ -49,8 +49,22 @@ module Utils::Debuggable
   end
 end
 
+module ErrorGuardian
+  macro included
+    {% verbatim do %}
+      # Returns the error from the current method if the result of *node* is an error.
+      macro err_guard(node)
+        %value = ({{ node }})
+        return %value if %value.is_a?(Error)
+        %value
+      end
+    {% end %} # verbatim
+  end
+end
+
 class IntCodeVM
   include Utils::Debuggable
+  include ErrorGuardian
 
   annotation Opcode; end
 
@@ -62,8 +76,14 @@ class IntCodeVM
   getter? running = false
   getter memory : Memory
   getter error : Error? = nil
+  property input_chan = Channel(Int32).new
+  property output_chan = Channel(Int32).new
 
-  alias InstructionHandler = -> # TODO: args & return ?
+  record Context,
+    mem : Memory,
+    ip : Int32
+
+  alias InstructionHandler = (Memory, Int32, OpcodeField) -> (Error | Int32)
   @instructions : Hash(Int32, InstructionHandler)
 
   def initialize(@memory)
@@ -74,28 +94,38 @@ class IntCodeVM
   def gather_instructions
     all_instr = {} of Int32 => InstructionHandler
     {% for op_def in @type.methods.select { |m| !!m.annotation(Opcode) } %}
-      {% op_ann = op_def.annotation(Opcode) %}
-      {% opcode = op_ann.args.first %}
-      {% op_arg_kinds = op_ann.args[1..-1] %}
+      {% ann = op_def.annotation(Opcode) %}
+      {% opcode = ann.args.first %}
+      {% arg_mode_specs = ann[:arg_modes] || ([] of _) %}
+      {% arg_count = arg_mode_specs.size %}
 
-      instr_handler = ->do
-        {% if op_def.args.size == 0 %}
-          decoded_args = Tuple.new
-        {% else %}
-          decoded_args = {
-            {% for arg, idx in op_def.args %}
-              err_guard(@memory[@ip + 1 + {{ idx }}]),
-            {% end %}
-          }
-        {% end %}
+      {% if arg_count != op_def.args.size %}
+        {% ann.raise "Number of arguments mismatch between annotation and def (#{arg_count} != #{op_def.args.size})" %}
+      {% end %}
 
+      # ---- For opcode {{ opcode }}
+
+      instr_handler = InstructionHandler.new do |mem, ip, opcode_field|
+        instr_decoder = ArgsDecoder({{ arg_count }}).new(mem, ip)
+
+        arg_modes =
+          {% if arg_count == 0 %}
+            Tuple.new # empty tuple
+          {% else %}
+            {
+              {% for idx in 0...arg_count %}
+                opcode_field.mode_for_arg({{ idx }}, mode_spec: {{ arg_mode_specs[idx] }}),
+              {% end %}
+            }
+          {% end %}
+
+        decoded_args = err_guard instr_decoder.parse_args(*arg_modes)
         err_guard({{ op_def.name }}(*decoded_args))
 
-        {{ op_def.args.size }}
+        instr_decoder.new_ip
       end
 
       all_instr[{{ opcode }}] = instr_handler
-      {% debug %}
     {% end %}
 
     all_instr
@@ -117,68 +147,138 @@ class IntCodeVM
   def exec_next_instruction
     return false unless @running
 
-    opcode = err_guard @memory[@ip]
+    opcode_field = OpcodeField.new err_guard @memory[@ip]
+    opcode = opcode_field.opcode
+    @ip += 1
+
     if instr_handler = @instructions[opcode]?
-      nb_args = err_guard instr_handler.call # FIXME: give some args?
+      nb_args = err_guard instr_handler.call(@memory, @ip, opcode_field) # FIXME: give some args?
       @ip += 1 + nb_args # opcode + args
     else
       puts "/!\\/!\\ WARNING: Unknown opcode #{opcode} at IP:#{@ip}, skipping"
       @ip += 1
     end
-
-    # case opcode = err_guard @memory[@ip]
-    # when 1
-    #   from_addr1 = err_guard @memory[@ip + 1]
-    #   from_addr2 = err_guard @memory[@ip + 2]
-    #   to_addr = err_guard @memory[@ip + 3]
-    #   result = err_guard(@memory[from_addr1]) + err_guard(@memory[from_addr2])
-
-    #   __debug "[IP:#{@ip}] Opcode add : mem[#{to_addr}] <- mem[#{from_addr1}] + mem[#{from_addr2}]"
-
-    #   err_guard @memory[to_addr] = result
-    #   @ip += 4
-
-    # when 2
-    #   from_addr1 = err_guard @memory[@ip + 1]
-    #   from_addr2 = err_guard @memory[@ip + 2]
-    #   to_addr = err_guard @memory[@ip + 3]
-    #   result = err_guard(@memory[from_addr1]) * err_guard(@memory[from_addr2])
-
-    #   __debug "[IP:#{@ip}] Opcode mul : mem[#{to_addr}] <- mem[#{from_addr1}] * mem[#{from_addr2}]"
-
-    #   err_guard @memory[to_addr] = result
-    #   @ip += 4
-
-    # when 99
-    #   __debug "[IP:#{@ip}] Opcode quit!"
-    #   @running = false
-
-    # else
-    #   puts "/!\\/!\\ WARNING: Unknown opcode #{opcode} at IP:#{@ip}, skipping"
-    #   @ip += 1
-
-    # end
   end
 
-  def decode_instruction(instr, &)
-    # TODO?
+  enum ArgMode # FIXME: rename?
+    Dynamic
+    Position
+    Immediate
+
+    # shortcuts
+
+    Dyn = Dynamic
+    Addr = Position
   end
 
-  @[Opcode(1, :addr, :addr, :addr)]
-  def op_add(from_addr1, from_addr2, to_addr)
-    from_addr1 = err_guard @memory[@ip + 1]
-    from_addr2 = err_guard @memory[@ip + 2]
+  struct ArgsDecoder(NbArgs)
+    include ErrorGuardian
+
+    def initialize(@mem : Memory, @ip : Int32)
+    end
+
+    def new_ip
+      @ip
+    end
+
+    # TODO: doc!
+    def parse_args(*arg_modes)
+      {% if NbArgs == 0 %}
+        Tuple.new
+      {% else %}
+        {% for idx in 0...NbArgs %}
+          case arg_modes[{{ idx }}]
+          when .position?
+            %arg_addr{idx} = err_guard @mem[@ip + {{ idx }}]
+            %arg{idx} = err_guard @mem[%arg_addr{idx}]
+          when .immediate?
+            %arg{idx} = err_guard @mem[@ip + {{ idx }}]
+          else raise "BUG: unreachable!"
+          end
+        {% end %}
+
+        {
+          {% for idx in 0...NbArgs %}
+            %arg{idx},
+          {% end %}
+        }
+      {% end %}
+    end
+  end
+
+  struct OpcodeField # FIXME: rename?
+    def initialize(@raw_opcode : Int32)
+    end
+
+    def opcode
+      @raw_opcode % 100 # extract first 2 digit
+    end
+
+    def mode_for_arg(arg_idx, mode_spec : ArgMode)
+      mode = (@raw_opcode // (10 ** arg_idx) % 10)
+      mode == 1 ? ArgMode::Immediate : ArgMode::Position
+    end
+  end
+
+  # ABCDE
+  #  1002
+  #
+  # DE - two-digit opcode,      02 == opcode 2
+  #  C - mode of 1st parameter,  0 == position mode
+  #  B - mode of 2nd parameter,  1 == immediate mode
+  #  A - mode of 3rd parameter,  0 == position mode,
+  #                                   omitted due to being a leading zero
+  def parse_opcode
+  end
+
+  def draft_do_instruction
+    instr_decoder = ArgsDecoder(3).new(@memory, @ip)
+
+    opcode, arg_modes = err_guard instr_decoder.read_opcode
+
+    decoded_args = instr_decoder.read_args(arg_modes)
+    op_some_instr(*decoded_args)
+  end
+
+  def instr_read_args(*arg_modes : *ArgMode)
+    opcode_field = err_guard @memory[@ip]
+    @ip += 1
+
+    opcode = opcode_field % 100 # extract first 2 digit
+
+    args = arg_modes.map_with_index do |arg_mode, idx|
+      case arg_mode
+      when :addr
+        # read the addr at @ip + idx
+      when :dyn
+        # ask the mode to the opcode's flags
+        # when :addr
+        #   read the addr at @ip + idx
+        # when :immediate
+        #   read the value from memory
+        # end
+      end
+    end
+
+    # OR yield ? so we can return an error in case of mem error (for example)
+    {opcode, {arg1, ar2, arg3}}
+  end
+
+  @[Opcode(1, arg_modes: [:dyn, :dyn, :addr])]
+  def op_add(val1, val2, to_addr)
+    # from_addr1 = err_guard @memory[@ip + 1]
+    # from_addr2 = err_guard @memory[@ip + 2]
     to_addr = err_guard @memory[@ip + 3]
-    result = err_guard(@memory[from_addr1]) + err_guard(@memory[from_addr2])
+    # result = err_guard(@memory[from_addr1]) + err_guard(@memory[from_addr2])
 
-    __debug "[IP:#{@ip}] Opcode add : mem[#{to_addr}] <- mem[#{from_addr1}] + mem[#{from_addr2}]"
+    __debug "[IP:#{@ip}] mem[#{to_addr}] = #{val1} + #{val2}"
 
-    err_guard @memory[to_addr] = result
+    err_guard @memory[to_addr] = val1 + val2
 
     # @ip += 4 # Should be done by the caller
   end
 
-  @[Opcode(2, :addr, :addr, :addr)]
+  @[Opcode(2, arg_modes: [:dyn, :dyn, :addr])]
   def op_mul(from_addr1, from_addr2, to_addr)
     from_addr1 = err_guard @memory[@ip + 1]
     from_addr2 = err_guard @memory[@ip + 2]
@@ -188,6 +288,14 @@ class IntCodeVM
     __debug "[IP:#{@ip}] Opcode mul : mem[#{to_addr}] <- mem[#{from_addr1}] * mem[#{from_addr2}]"
 
     err_guard @memory[to_addr] = result
+  end
+
+  @[Opcode(3, arg_modes: [:addr])]
+  def op_input(to_addr)
+  end
+
+  @[Opcode(4, arg_modes: [:dyn])]
+  def op_output(from_addr)
   end
 
   @[Opcode(99)]
@@ -200,17 +308,4 @@ class IntCodeVM
   def result
     @memory[0]
   end
-
-  protected def method_name(*args)
-
-  end
-
-
-  # Returns the error from the current method if the result of *node* is an error.
-  macro err_guard(node) # Should be protected... but macro can't be protected
-    %value = ({{ node }})
-    return %value if %value.is_a?(Error)
-    %value
-  end
 end
-
