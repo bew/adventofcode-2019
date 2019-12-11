@@ -5,5 +5,7 @@ stdenv.mkDerivation {
   buildInputs = [
     crystal
     icr
+    just
+    watchexec
   ];
 }
