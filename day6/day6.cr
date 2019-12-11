@@ -40,9 +40,17 @@ class Planet
     planets << planet
 
     while parent = planet.direct_orbit
-      planets = parent
+      planets << parent
       planet = parent
     end
+
+    planets
+  end
+
+  def inspect(io)
+    io << "#<Planet: name=" << @name
+    io << " | " << @planets_around.size << " planets around"
+    io << ">"
   end
 end
 
@@ -104,14 +112,22 @@ def part2(input)
   orbit_map = load_orbit_map(input)
 
   # find a common direct / indirect orbit
-
   you = orbit_map.find_planet!("YOU")
   san = orbit_map.find_planet!("SAN")
 
+  you_to_center = you.planets_in_direct_or_indirect_orbit
+  san_to_center = san.planets_in_direct_or_indirect_orbit
 
+  common_planet = (you_to_center & san_to_center).first
+
+  # add distances from the common planet to {you,san}
+  dist_common_to_you = you_to_center.index(common_planet).not_nil!
+  dist_common_to_san = san_to_center.index(common_planet).not_nil!
+
+  dist_common_to_you + dist_common_to_san
 end
 
-test_input = <<-ORBIT_MAP.strip
+test_input_part1 = <<-ORBIT_MAP.strip
   COM)B
   B)C
   C)D
@@ -125,8 +141,8 @@ test_input = <<-ORBIT_MAP.strip
   K)L
   ORBIT_MAP
 
-result = part1 test_input
-puts "Result for test_input: #{result}"
+result = part1 test_input_part1
+puts "Result for test_input (part1): #{result}"
 puts "Should be 42"
 puts
 
@@ -135,6 +151,27 @@ puts "Result for part1: #{result}"
 puts "Should be 241064"
 puts
 
-# test_input +=
+test_input_part2 = <<-ORBIT_MAP.strip
+  COM)B
+  B)C
+  C)D
+  D)E
+  E)F
+  B)G
+  G)H
+  D)I
+  E)J
+  J)K
+  K)L
+  K)YOU
+  I)SAN
+  ORBIT_MAP
 
-part2 test_input
+result = part2 test_input_part2
+puts "Result for test_input (part2): #{result}"
+puts "Should be 4"
+puts
+
+result = part2 INPUT
+puts "Result for part2: #{result}"
+puts "Should be 418"
