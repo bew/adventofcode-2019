@@ -1,78 +1,14 @@
 # Use a VM module?
 
-abstract struct Error; end
-record InvalidMemoryAccess(T) < Error, idx : T
+require "./utils"
+require "./intcode_vm/*"
 
-class Memory
-  def initialize(@raw : Array(Int32))
-  end
-
-  def [](idx : Int32)
-    return InvalidMemoryAccess.new(idx) unless check_idx(idx)
-    @raw[idx]
-  end
-
-  def [](range : Range)
-    index, count = Indexable.range_to_index_and_count(range, size)
-    unless check_idx(index) || check_idx(index + count)
-      return InvalidMemoryAccess.new(range)
-    end
-
-    @raw[range]
-  end
-
-  def []=(idx : Int32, value : Int32)
-    return InvalidMemoryAccess.new(idx) unless check_idx(idx)
-    @raw[idx] = value
-  end
-
-  delegate to_s, size, to: @raw
-
-  private def check_idx(idx)
-    0 <= idx < @raw.size
-  end
+module IntCodeVM
+  abstract struct Error; end
+  record InvalidMemoryAccess(T) < Error, idx : T
 end
 
-module Utils::Debuggable
-  macro included
-    property? debug = false
-
-    private def __debug(*args)
-      return unless debug?
-      args.each do |arg|
-        print "DEBUG: "
-        puts arg
-      end
-      puts if args.size == 0
-    end
-
-    {% verbatim do %}
-    private macro __debug!(*args) # Cannot be protected because of some crystal design decision
-      if debug?
-        {% for arg in args %}
-          print "DEBUG: "
-          p!({{ arg }})
-        {% end %}
-      end
-    end
-    {% end %}
-  end
-end
-
-module ErrorGuardian
-  macro included
-    {% verbatim do %}
-      # Returns the error from the current method if the result of *node* is an error.
-      macro err_guard(node)
-        %value = ({{ node }})
-        return %value if %value.is_a?(Error)
-        %value
-      end
-    {% end %} # verbatim
-  end
-end
-
-class IntCodeVM
+class IntCodeVM::Core
   include Utils::Debuggable
   include ErrorGuardian
 
@@ -134,24 +70,24 @@ class IntCodeVM
   end
 
   private def __fetch_arg(idx, opcode_flags, param_name)
-    __debug "Arg index #{idx}"
+    # __debug "Arg index #{idx}"
 
     mode = opcode_flags.mode_for_arg(idx)
-    __debug "  mode: #{mode}"
+    # __debug "  mode: #{mode}"
 
     case mode
     when .address?
       if /addr/.match(param_name)
         value = err_guard @memory[@ip + idx]
-        __debug "  raw_addr: #{value}"
+        # __debug "  raw_addr: #{value}"
       else
         arg_addr = err_guard @memory[@ip + idx]
         value = err_guard @memory[arg_addr]
-        __debug "  addr: #{arg_addr} | resolved_addr: #{value}"
+        # __debug "  addr: #{arg_addr} | resolved_addr: #{value}"
       end
     when .immediate?
       value = err_guard @memory[@ip + idx]
-      __debug "  immediate: #{value}"
+      # __debug "  immediate: #{value}"
 
     else raise "BUG: Unknown ArgMode: #{mode}"
     end
@@ -170,7 +106,7 @@ class IntCodeVM
       # ---- BEGIN opcode {{ opcode }} ({{ instr_name }})
       handler_proc = Instruction::ProcT.new do |opcode_flags|
 
-        __debug "--- fetching args for opcode {{ instr_name.id }}"
+        # __debug "--- fetching args for opcode {{ instr_name.id }}"
 
         decoded_args = Tuple.new(
           {% for idx in 0...arg_count %}
@@ -178,7 +114,6 @@ class IntCodeVM
           {% end %}
         )
 
-        __debug! decoded_args
         err_guard({{ def_node.name }}(*decoded_args))
 
         @ip + {{ arg_count }}
@@ -216,7 +151,7 @@ class IntCodeVM
     return false unless @running
 
     __debug
-    __debug "/=> partial mem (from IP:#{@ip}): #{@memory[@ip..@ip + 10]}"
+    __debug "/=> partial mem (from IP:#{@ip}): #{@memory[@ip..@ip + 6]}"
 
     opcode, flags = OpcodeFlags.from_opcode_field(err_guard @memory[@ip])
     @ip += 1
@@ -270,6 +205,15 @@ class IntCodeVM
     end
   end
 
+  # Returns the result of the program
+  def result
+    @memory[0]
+  end
+end
+
+# See https://forum.crystal-lang.org/t/macros-how-to-select-all-methods-with-annotation/1472
+# class IntCodeVM::Day2 < IntCodeVM::Core
+class IntCodeVM::Day5 < IntCodeVM::Core
   @[Opcode(1, :add)]
   def op_add(val1, val2, to_addr)
     __debug "[IP:#{@ip}] mem[#{to_addr}] = #{val1} + #{val2}"
@@ -284,6 +228,14 @@ class IntCodeVM
     err_guard @memory[to_addr] = val1 * val2
   end
 
+  @[Opcode(99, :quit)]
+  def op_quit
+    __debug "[IP:#{@ip}] Opcode quit!"
+    @running = false
+  end
+# end
+#
+# class IntCodeVM::Day5 < IntCodeVM::Day2
   @[Opcode(3, :input)]
   def op_input(to_addr)
     value = inputs_channel.receive
@@ -298,16 +250,5 @@ class IntCodeVM
     __debug "[IP:#{@ip}] Opcode output : output << #{value}"
     outputs_channel.send value
     Fiber.yield # give a chance to the other end of the output channel to do something
-  end
-
-  @[Opcode(99, :quit)]
-  def op_quit
-    __debug "[IP:#{@ip}] Opcode quit!"
-    @running = false
-  end
-
-  # Returns the result of the program
-  def result
-    @memory[0]
   end
 end

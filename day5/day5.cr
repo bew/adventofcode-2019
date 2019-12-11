@@ -3,7 +3,7 @@ require "../common/intcode_vm"
 INPUT = {{ read_file "#{__DIR__}/input" }}.strip
 
 def test_program(input)
-  vm = IntCodeVM.from_program input
+  vm = IntCodeVM::Day5.from_program input
   vm.debug = true
 
   spawn do
