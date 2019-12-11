@@ -20,19 +20,19 @@ def test_amplifier_chain(program, phase_setting_sequence : PhaseSequence, *, vm_
   # 0 ->| Amp A |->| Amp B |->| Amp C |->| Amp D |->| Amp E |-> (to thrusters)
   #     +-------+  +-------+  +-------+  +-------+  +-------+
 
-  vm1 = IntCodeVM::Day5.from_program program, name: "vm1"
+  vm1 = IntCodeVM::Day5.from_program program, name: "Amp A"
   vm1.debug = vm_debug
 
-  vm2 = IntCodeVM::Day5.from_program program, name: "vm2"
+  vm2 = IntCodeVM::Day5.from_program program, name: "Amp B"
   vm2.debug = vm_debug
 
-  vm3 = IntCodeVM::Day5.from_program program, name: "vm3"
+  vm3 = IntCodeVM::Day5.from_program program, name: "Amp C"
   vm3.debug = vm_debug
 
-  vm4 = IntCodeVM::Day5.from_program program, name: "vm4"
+  vm4 = IntCodeVM::Day5.from_program program, name: "Amp D"
   vm4.debug = vm_debug
 
-  vm5 = IntCodeVM::Day5.from_program program, name: "vm5"
+  vm5 = IntCodeVM::Day5.from_program program, name: "Amp E"
   vm5.debug = vm_debug
 
   spawn do
@@ -73,7 +73,7 @@ def test_amplifier_chain(program, phase_setting_sequence : PhaseSequence, *, vm_
   final_output
 end
 
-def phase_sequence_to_tuple(sequence)
+def phase_sequence_to_tuple(sequence : String)
   PhaseSequence.from(sequence.split(',').map(&.to_i))
 end
 
@@ -108,7 +108,7 @@ tests.each do |test|
   if result == test[:expected_result]
     puts "Success!!!!! result: #{result}"
   else
-    puts "Failed... result: #{result} | expected: #{test[:expected_result]}"
+    puts "!!! Failed... result: #{result} | expected: #{test[:expected_result]}"
   end
 end
 
@@ -144,12 +144,7 @@ def part1(program)
     end
   end
 
-  if max_output.nil?
-    puts "!!! No max_output, something is very wrong..."
-    {nil, nil}
-  else
-    {max_output, phase_sequence_for_max_output}
-  end
+  {max_output.not_nil!, phase_sequence_for_max_output}
 end
 
 puts
