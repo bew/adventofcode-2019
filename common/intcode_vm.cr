@@ -14,9 +14,9 @@ class IntCodeVM::Core
 
   annotation Opcode; end
 
-  def self.from_program(prog_str)
+  def self.from_program(prog_str, *, name = nil)
     raw_memory = prog_str.split(',').map &.to_i
-    new Memory.new raw_memory
+    new Memory.new(raw_memory), name
   end
 
   getter? running = false
@@ -63,10 +63,13 @@ class IntCodeVM::Core
   end
 
   @instructions : Hash(Int32, Instruction)
+  getter name : String?
 
-  def initialize(@memory)
+  def initialize(@memory, @name = nil)
     @ip = 0
     @instructions = gather_instructions
+
+    self.debug_id = @name
   end
 
   private def __fetch_arg(idx, opcode_flags, param_name)
@@ -248,6 +251,8 @@ end
 class IntCodeVM::Day5 < IntCodeVM::Day2
   @[Opcode(3, :input)]
   def op_input(to_addr)
+    __debug "[IP:#{@ip}] Opcode input : waiting for input..."
+
     value = inputs_channel.receive
 
     __debug "[IP:#{@ip}] Opcode input : mem[#{to_addr}] = input (got #{value})"
