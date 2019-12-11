@@ -70,30 +70,29 @@ class IntCodeVM::Core
   end
 
   private def __fetch_arg(idx, opcode_flags, param_name)
-    # __debug "Arg index #{idx}"
-
     mode = opcode_flags.mode_for_arg(idx)
-    # __debug "  mode: #{mode}"
 
     case mode
     when .address?
       if /addr/.match(param_name)
         value = err_guard @memory[@ip + idx]
-        # __debug "  raw_addr: #{value}"
+        __debug "  Arg #{idx} | raw_addr: #{value}"
       else
         arg_addr = err_guard @memory[@ip + idx]
         value = err_guard @memory[arg_addr]
-        # __debug "  addr: #{arg_addr} | resolved_addr: #{value}"
+        __debug "  Arg #{idx} | addr: #{arg_addr} => resolved_value: #{value}"
       end
     when .immediate?
       value = err_guard @memory[@ip + idx]
-      # __debug "  immediate: #{value}"
-
-    else raise "BUG: Unknown ArgMode: #{mode}"
+      __debug "  Arg #{idx} | immediate: #{value}"
+    else
+      raise "BUG: Unknown ArgMode: #{mode}"
     end
 
     value
   end
+
+  record JumpAddr, val : Int32
 
   private def gather_instructions
     {% begin %}
@@ -122,9 +121,13 @@ class IntCodeVM::Core
           {% end %}
           )
 
-          err_guard({{ def_node.name }}(*decoded_args))
+          ret = err_guard({{ def_node.name }}(*decoded_args))
 
-          @ip + {{ arg_count }}
+          if (jump_addr = ret).is_a?(JumpAddr)
+            jump_addr.val
+          else
+            @ip + {{ arg_count }}
+          end
         end
 
         instr = Instruction.new({{ opcode }}, {{ instr_name }}, handler_proc)
@@ -257,5 +260,41 @@ class IntCodeVM::Day5 < IntCodeVM::Day2
     __debug "[IP:#{@ip}] Opcode output : output << #{value}"
     outputs_channel.send value
     Fiber.yield # give a chance to the other end of the output channel to do something
+  end
+
+  # If the first parameter is non-zero, it sets the instruction pointer to the
+  # value from the second parameter. Otherwise, it does nothing.
+  @[Opcode(5, :jump_if_true)]
+  def op_jump_if_true(cond, jump_to)
+    if cond != 0
+      __debug "[IP:#{@ip}] Opcode jump_if_true : (cond is true) jumping to #{jump_to}"
+      JumpAddr.new(jump_to)
+    else
+      __debug "[IP:#{@ip}] Opcode jump_if_true : (cond is false) doing nothing"
+    end
+  end
+
+  # If the first parameter is zero, it sets the instruction pointer to the value from
+  # the second parameter. Otherwise, it does nothing.
+  @[Opcode(6, :jump_if_false)]
+  def op_jump_if_false(cond, jump_to)
+    if cond == 0
+      __debug "[IP:#{@ip}] Opcode jump_if_false : (cond is false) jumping to #{jump_to}"
+      JumpAddr.new(jump_to)
+    else
+      __debug "[IP:#{@ip}] Opcode jump_if_false : (cond is true) doing nothing"
+    end
+  end
+
+  @[Opcode(7, :less_than)]
+  def op_less_than(val1, val2, to_addr)
+    __debug "[IP:#{@ip}] Opcode less_than : mem[#{to_addr}] = (#{val1} < #{val2} ? 1 : 0)"
+    err_guard @memory[to_addr] = (val1 < val2 ? 1 : 0)
+  end
+
+  @[Opcode(8, :equals)]
+  def op_equals(val1, val2, to_addr)
+    __debug "[IP:#{@ip}] Opcode equals : mem[#{to_addr}] = (#{val1} == #{val2} ? 1 : 0)"
+    err_guard @memory[to_addr] = (val1 == val2 ? 1 : 0)
   end
 end
