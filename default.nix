@@ -26,4 +26,5 @@ in {
   day3_with_tests = mkDayDrv "./day3/day3_with_tests.cr";
   day4 = mkDayDrv "./day4/day4.cr";
   day5 = mkDayDrv "./day5/day5.cr";
+  day6 = mkDayDrv "./day6/day6.cr";
 }
