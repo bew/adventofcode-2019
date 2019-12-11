@@ -96,35 +96,44 @@ class IntCodeVM::Core
   end
 
   private def gather_instructions
-    all_instr = {} of Int32 => Instruction
-    {% for def_node in @type.methods.select { |m| !!m.annotation(Opcode) } %}
-      {% ann = def_node.annotation(Opcode) %}
-      {% opcode = ann.args.first %}
-      {% arg_count = def_node.args.size %}
-      {% instr_name = ann.args[1].id.stringify %}
+    {% begin %}
+      all_instr = {} of Int32 => Instruction
+      {% all_methods = @type.methods %}
+      {% for ancestor in @type.ancestors %}
+        {% all_methods = all_methods + ancestor.methods %}
+      {% end %}
+      # note: would be nice to have a `@type.all_methods`......
+      {% opcode_methods = all_methods.select { |m| !!m.annotation(Opcode) } %}
 
-      # ---- BEGIN opcode {{ opcode }} ({{ instr_name }})
-      handler_proc = Instruction::ProcT.new do |opcode_flags|
+      {% for def_node in opcode_methods %}
+        {% ann = def_node.annotation(Opcode) %}
+        {% opcode = ann.args.first %}
+        {% arg_count = def_node.args.size %}
+        {% instr_name = ann.args[1].id.stringify %}
 
-        # __debug "--- fetching args for opcode {{ instr_name.id }}"
+        # ---- BEGIN opcode {{ opcode }} ({{ instr_name }})
+        handler_proc = Instruction::ProcT.new do |opcode_flags|
 
-        decoded_args = Tuple.new(
-          {% for idx in 0...arg_count %}
-            err_guard(__fetch_arg({{ idx }}, opcode_flags, param_name: ({{ def_node.args[idx].name.stringify }}))),
+          # __debug "--- fetching args for opcode {{ instr_name.id }}"
+
+          decoded_args = Tuple.new(
+            {% for idx in 0...arg_count %}
+              err_guard(__fetch_arg({{ idx }}, opcode_flags, param_name: ({{ def_node.args[idx].name.stringify }}))),
           {% end %}
-        )
+          )
 
-        err_guard({{ def_node.name }}(*decoded_args))
+          err_guard({{ def_node.name }}(*decoded_args))
 
-        @ip + {{ arg_count }}
-      end
+          @ip + {{ arg_count }}
+        end
 
-      instr = Instruction.new({{ opcode }}, {{ instr_name }}, handler_proc)
-      all_instr[{{ opcode }}] = instr
-      # ---- END opcode {{ opcode }} ({{ instr_name }})
+        instr = Instruction.new({{ opcode }}, {{ instr_name }}, handler_proc)
+        all_instr[{{ opcode }}] = instr
+        # ---- END opcode {{ opcode }} ({{ instr_name }})
+      {% end %}
+
+      all_instr
     {% end %}
-
-    all_instr
   end
 
   def run
@@ -211,9 +220,7 @@ class IntCodeVM::Core
   end
 end
 
-# See https://forum.crystal-lang.org/t/macros-how-to-select-all-methods-with-annotation/1472
-# class IntCodeVM::Day2 < IntCodeVM::Core
-class IntCodeVM::Day5 < IntCodeVM::Core
+class IntCodeVM::Day2 < IntCodeVM::Core
   @[Opcode(1, :add)]
   def op_add(val1, val2, to_addr)
     __debug "[IP:#{@ip}] mem[#{to_addr}] = #{val1} + #{val2}"
@@ -233,9 +240,9 @@ class IntCodeVM::Day5 < IntCodeVM::Core
     __debug "[IP:#{@ip}] Opcode quit!"
     @running = false
   end
-# end
-#
-# class IntCodeVM::Day5 < IntCodeVM::Day2
+end
+
+class IntCodeVM::Day5 < IntCodeVM::Day2
   @[Opcode(3, :input)]
   def op_input(to_addr)
     value = inputs_channel.receive
