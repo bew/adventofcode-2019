@@ -5,7 +5,7 @@ let
     name = "adventofcode-2019--${baseNameOf main_src}-bin";
 
     buildInputs = [
-      crystal
+      crystal_0_31
     ];
 
     src = ./.;
